@@ -1,0 +1,159 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if user is an admin
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    // Helper function to validate user data fields (excluding isAdmin)
+    function validUserData() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+        'email', 'displayName', 'normalPassword', 'distressPassword',
+        'emergencyContacts', 'features', 'disguiseMode', 'disguiseSettings',
+        'safeTimerDuration', 'safeTimerEndTime', 'activeSosEventId',
+        'lastLocation', 'isSetupComplete', 'profileSettings',
+        'securitySettings', 'createdAt', 'updatedAt', 'phone', 'bloodType',
+        'allergies', 'medications', 'emergencyMessage'
+      ]);
+    }
+    
+    // Helper function to check if isAdmin field is unchanged (prevents privilege escalation)
+    function isAdminUnchanged(userId) {
+      return !('isAdmin' in request.resource.data) || 
+        (resource != null && request.resource.data.isAdmin == resource.data.isAdmin);
+    }
+    
+    // Helper function to validate admin-only user data fields
+    function validAdminUserData() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+        'email', 'displayName', 'normalPassword', 'distressPassword',
+        'emergencyContacts', 'features', 'disguiseMode', 'disguiseSettings',
+        'safeTimerDuration', 'safeTimerEndTime', 'activeSosEventId',
+        'lastLocation', 'isSetupComplete', 'isAdmin', 'profileSettings',
+        'securitySettings', 'createdAt', 'updatedAt', 'phone', 'bloodType',
+        'allergies', 'medications', 'emergencyMessage'
+      ]);
+    }
+    
+    // Helper function to validate SOS event data
+    function validSOSEvent() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+        'id', 'userId', 'userEmail', 'status', 'triggerMethod',
+        'location', 'triggeredAt', 'resolvedAt', 'contactsNotified'
+      ]) &&
+      data.status in ['active', 'resolved', 'cancelled'];
+    }
+    
+    // Helper function to validate stream data
+    function validStreamData() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+        'audioChunk', 'videoFrame', 'isStreaming', 'timestamp'
+      ]);
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Users can read their own data
+      // Admins can read all user data
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Users can create their own profile (cannot set isAdmin)
+      allow create: if isOwner(userId) && validUserData();
+      
+      // Users can update their own data but cannot change isAdmin
+      allow update: if isOwner(userId) && validUserData() && isAdminUnchanged(userId);
+      
+      // Admins can update any user data including isAdmin field
+      allow update: if isAdmin() && validAdminUserData();
+      
+      // Only admins can delete user profiles
+      allow delete: if isAdmin();
+      
+      // SOS Events subcollection
+      match /sosEvents/{eventId} {
+        // Users can read their own SOS events
+        // Admins can read all SOS events
+        allow read: if isOwner(userId) || isAdmin();
+        
+        // Users can create SOS events for themselves
+        allow create: if isOwner(userId) && validSOSEvent();
+        
+        // Users can update their own SOS events (resolve/cancel)
+        // Admins can update any SOS event
+        allow update: if (isOwner(userId) || isAdmin()) && validSOSEvent();
+        
+        // Users can delete their own SOS events
+        // Admins can delete any SOS event
+        allow delete: if isOwner(userId) || isAdmin();
+        
+        // Stream subcollection for live audio/video
+        match /stream/{streamId} {
+          // Admins can read live streams
+          // Users can read their own streams
+          allow read: if isOwner(userId) || isAdmin();
+          
+          // Only the user can write to their stream
+          allow create, update: if isOwner(userId) && validStreamData();
+          
+          // Users and admins can delete stream data
+          allow delete: if isOwner(userId) || isAdmin();
+        }
+      }
+      
+      // Locations subcollection
+      match /locations/{locationId} {
+        // Users can read their own locations
+        // Admins can read all locations
+        allow read: if isOwner(userId) || isAdmin();
+        
+        // Users can create location entries for themselves
+        allow create: if isOwner(userId);
+        
+        // Users can update their own locations
+        allow update: if isOwner(userId);
+        
+        // Users can delete their own locations
+        allow delete: if isOwner(userId);
+      }
+      
+      // Alerts subcollection
+      match /alerts/{alertId} {
+        // Users can read their own alerts
+        // Admins can read all alerts
+        allow read: if isOwner(userId) || isAdmin();
+        
+        // Users can create alert entries for themselves
+        allow create: if isOwner(userId);
+        
+        // No updates allowed to alert history (immutable)
+        allow update: if false;
+        
+        // Users can delete their own alerts
+        allow delete: if isOwner(userId);
+      }
+    }
+    
+    // Deny all other access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

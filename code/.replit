@@ -1,0 +1,56 @@
+modules = ["nodejs-20", "web"]
+[agent]
+expertMode = true
+integrations = ["javascript_gemini_ai_integrations:2.0.0"]
+
+[nix]
+channel = "stable-25_05"
+
+[deployment]
+deploymentTarget = "static"
+run = ["node", "./dist/index.cjs"]
+build = ["npm", "run", "build"]
+publicDir = "dist"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+VITE_FIREBASE_API_KEY = "AIzaSyBrA9czrnvAaUfOh-jAX-jR4DqMz-c9344"
+VITE_FIREBASE_PROJECT_ID = "guardian-angel-976e9"
+VITE_FIREBASE_APP_ID = "1:466867566410:web:83809afe3cf75845a2f3b3"
+VITE_FIREBASE_AUTH_DOMAIN = "guardian-angel-976e9.firebaseapp.com"
+VITE_FIREBASE_STORAGE_BUCKET = "guardian-angel-976e9.firebasestorage.app"
+VITE_FIREBASE_MESSAGING_SENDER_ID = "466867566410"
+VITE_FIREBASE_MEASUREMENT_ID = "G-DQD608N0JS"
